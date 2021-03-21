@@ -13,6 +13,7 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///data.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
+
 class OrderDB(db.Model):
     __tablename__ = 'orders'
 
@@ -89,67 +90,95 @@ class OrdersDeliveryHours(db.Model):
         return f'<OrdersDeliveryHours({self.id}, {self.begin}, {self.end})>'
 
 
-
 class Time:
     def __init__(self, s: str = "00:00"):
         self.h, self.m = map(int, s.split(':'))
         assert 0 <= self.h <= 24 and 0 <= self.m <= 60  # check valid time
         self.sum = self.h * 60 + self.m
 
+    @classmethod
+    def from_sum(cls, sum: int):
+        if not isinstance(sum, int):
+            raise ValueError("Not valid time")
+        if sum > 1439 or sum < 0:  # 23:59 in minutes
+            raise ValueError(f"{sum} > 23:59 in minutes or sum < 0")
+        obj = cls()
+        obj.sum = sum
+        obj.h = sum // 60
+        obj.m = sum % 60
+        return obj
+
     def __str__(self):
-        return f"{self.h}:{self.m}"
+        return f"{self.h:02d}:{self.m:02d}"
+
+    def __repr__(self):
+        return f"Time({str(self)})"
 
 
 class TimeSegment:
-    def __init__(self, seg: str = "00:00-00:00"):
+    def __init__(self, seg: str = "00:00-00:01"):
         times = re.findall(r'^\d{2}:\d{2}-\d{2}:\d{2}$', seg)
         if not times:
-            raise Exception("Not valid time")
+            raise ValueError("Not valid time")
         begin, end = (times[0]).split('-')
         self.begin = Time(begin)
         self.end = Time(end)
         if self.begin.sum >= self.end.sum:  # если конец раньше чем начало данные не валидны
-            raise Exception("Not valid time")
+            raise ValueError("Not valid time")
+
+    @classmethod
+    def by_sums(cls, s1, s2):
+        if s1 > s2:
+            raise ValueError("Not valid time")
+        obj = cls()
+        obj.begin = Time.from_sum(s1)
+        obj.end = Time.from_sum(s2)
+        return obj
+
+
+
 
     def __str__(self):
-        return f"{self.begin:02d}-{self.end:02d}"
+        return f"{self.begin}-{self.end}"
+
+    @classmethod
+    def validate(cls, v):
+        if not isinstance(v, str):
+            raise ValueError(f'str expected, got {type(v)}')
+        return cls(v)
+
+    @classmethod
+    def __get_validators__(cls):
+        yield cls.validate
+
+    def __repr__(self):
+        return f"TimeSegment({self.begin}-{self.end})"
 
 
 class Courier(BaseModel):
     id: Optional[int] = Field(alias='courier_id')
     type: Optional[Literal["foot", "bike", "car"]] = Field(alias='courier_type')
     regions: Optional[List[int]]
-    working_hours: Optional[List[str]]
+    working_hours: Optional[List[TimeSegment]]
 
-    @validator('working_hours')
-    def working_hours_is_valid(cls, list_times: List[str]):
-        try:
-            for t in list_times:
-                TimeSegment(t)
-        except Exception as e:
-            return ValidationError("Incorrect time")
-        return list_times
+    class Config:
+        extra = 'forbid'
+        json_encoders = {
+            TimeSegment: lambda v: str(v),
+
+        }
 
 
 class Order(BaseModel):
     id: int = Field(alias='order_id')
     weight: float
     region: int
-    delivery_hours: List[str]
+    delivery_hours: List[TimeSegment]
 
     @validator('id', 'weight', 'region')
     def field_is_positive(cls, v):
         assert v >= 0
         return v
-
-    @validator('delivery_hours')
-    def valid_time(cls, list_times: List[str]):
-        try:
-            for t in list_times:
-                TimeSegment(t)
-        except Exception as e:
-            return ValidationError("Incorrect time")
-        return list_times
 
 
 class Id(BaseModel):
@@ -182,14 +211,12 @@ def insert_courier(c: Courier):
     courier.regions = [
         CourierRegion(region=r) for r in c.regions
     ]
-    time_seg = [TimeSegment(wh) for wh in c.working_hours]
     courier.working_hours = [
-        CourierWorkingHours(begin=wh.begin.sum, end=wh.end.sum) for wh in time_seg
+        CourierWorkingHours(begin=wh.begin.sum, end=wh.end.sum) for wh in c.working_hours
     ]
     db.session.add(courier)
     try:
         db.session.commit()
-        print(courier.working_hours)
     except:
         db.session.rollback()
         raise Exception("Courier already exist")
@@ -197,9 +224,8 @@ def insert_courier(c: Courier):
 
 def insert_order(o: Order):
     order = OrderDB(id=o.id, weight=o.weight, region=o.region)
-    delivery_hours = [TimeSegment(dh) for dh in o.delivery_hours]
     order.delivery_hours = [
-        OrdersDeliveryHours(begin=dh.begin.sum, end=dh.end.sum) for dh in delivery_hours
+        OrdersDeliveryHours(begin=dh.begin.sum, end=dh.end.sum) for dh in o.delivery_hours
     ]
     db.session.add(order)
     try:
@@ -218,9 +244,30 @@ def assign_orders_to_courier(courier: Courier):
     return "WIP"
 
 
+def correct_assigned_orders(c: Courier):
+    pass
+
+
 def update_db(courier_update: Courier):
     print("to update ", courier_update)
-    return "WIP"
+    current_courier = db.session.query(CourierDB).filter_by(id=courier_update.id).one()
+    if courier_update.type is not None:
+        current_courier.type = courier_update.type
+    if courier_update.regions is not None:
+        to_delete = db.session.query(CourierRegion).filter_by(id=courier_update.id).all()
+        db.session.delete(to_delete)
+        db.session.commit()
+        current_courier.regions = [CourierRegion(region=r) for r in courier_update.regions]
+    if courier_update.working_hours is not None:
+        current_courier.working_hours = [CourierWorkingHours(begin=wh.begin, end=wh.end) for wh in courier_update.working_hours]
+    db.session.commit()
+    correct_assigned_orders(courier_update)
+
+    # forming answer
+    courier_update.type = current_courier.type
+    courier_update.regions = [r.region for r in current_courier.regions]
+    courier_update.working_hours = [TimeSegment.by_sums(ts.begin, ts.end) for ts in current_courier.working_hours]
+    return courier_update
 
 
 @app.route('/couriers', methods=['POST'])
@@ -254,10 +301,10 @@ def couriers_patch(id):
     try:
         update_fields = Courier.parse_raw(request.get_data())
         update_fields.id = id
-        ans = update_db(update_fields)
-    except:
+        updated = update_db(update_fields)
+    except Exception as e:
         return "Bad data", 400
-    return ans
+    return updated.json()
 
 
 @app.route('/orders', methods=['POST'])
