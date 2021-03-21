@@ -7,25 +7,25 @@ import json
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import ForeignKey, PrimaryKeyConstraint
 from sqlalchemy.orm import relationship
+
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///data.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-
 class OrderDB(db.Model):
-    __tablename__ = 'order'
+    __tablename__ = 'orders'
 
     id = db.Column(db.Integer, primary_key=True)
     weight = db.Column(db.Float, nullable=False)
     region = db.Column(db.Integer, nullable=False)
 
     def __repr__(self):
-        return f'<OrderDB {self.id}>'
+        return f'<OrderDB({self.id}, {self.weight}, {self.region})>'
 
 
 class CourierDB(db.Model):
-    __tablename__ = 'courier'
+    __tablename__ = 'couriers'
 
     id = db.Column(db.Integer, primary_key=True)
     type = db.Column(db.String(4), nullable=False)
@@ -35,36 +35,59 @@ class CourierDB(db.Model):
 
 
 class CourierRegion(db.Model):
-    __tablename__ = 'courier__region'
+    __tablename__ = 'couriers_regions'
     __table_args__ = (
         PrimaryKeyConstraint('id', 'region'),
         {},
     )
-    id = db.Column(db.Integer, ForeignKey('courier.id'))
+    id = db.Column(db.Integer, ForeignKey('couriers.id'))
     region = db.Column(db.Integer, nullable=False)
     courier = relationship('CourierDB', backref="regions")
 
     def __repr__(self):
         return f'<CourierRegion({self.id}, {self.region})>'
 
+
 class CourierWorkingHours(db.Model):
-    __tablename__ = 'courier__working__hours'
+    __tablename__ = 'couriers_working_hours'
     __table_args__ = (
         PrimaryKeyConstraint('id', 'begin', 'end'),
         {},
     )
-    id = db.Column(db.Integer, ForeignKey('courier.id'))
+    id = db.Column(db.Integer, ForeignKey('couriers.id'))
     begin = db.Column(db.Integer, nullable=False)
     end = db.Column(db.Integer, nullable=False)
     courier = relationship('CourierDB', backref="working_hours")
 
+    def __repr__(self):
+        return f'<CourierWorkingHours({self.id}, {self.begin}, {self.end})>'
+
+
 class Assigned_Order(db.Model):
+    __tablename__ = 'assigned_orders'
     id_courier = db.Column(db.Integer, nullable=False)
-    id_order = db.Column(db.Integer, nullable=False, primary_key=True)
+    id_order = db.Column(db.Integer, ForeignKey('orders.id'), primary_key=True)
     time = db.Column(db.DateTime, default=datetime.utcnow)
+    order = relationship('OrderDB', backref="assigned")
 
     def __repr__(self):
-        return '<Assigned_Order %r>' % self.id_order
+        return f'<Assigned_Order({self.id_order},{self.id_courier},{self.time})>'
+
+
+class OrdersDeliveryHours(db.Model):
+    __tablename__ = 'orders_delivery_hours'
+    __table_args__ = (
+        PrimaryKeyConstraint('id', 'begin', 'end'),
+        {},
+    )
+    id = db.Column(db.Integer, ForeignKey('orders.id'))
+    begin = db.Column(db.Integer, nullable=False)
+    end = db.Column(db.Integer, nullable=False)
+    order = relationship('OrderDB', backref="delivery_hours")
+
+    def __repr__(self):
+        return f'<OrdersDeliveryHours({self.id}, {self.begin}, {self.end})>'
+
 
 
 class Time:
@@ -159,15 +182,25 @@ def insert_courier(c: Courier):
     courier.regions = [
         CourierRegion(region=r) for r in c.regions
     ]
+    time_seg = [TimeSegment(wh) for wh in c.working_hours]
+    courier.working_hours = [
+        CourierWorkingHours(begin=wh.begin.sum, end=wh.end.sum) for wh in time_seg
+    ]
     db.session.add(courier)
     try:
         db.session.commit()
+        print(courier.working_hours)
     except:
         db.session.rollback()
         raise Exception("Courier already exist")
 
+
 def insert_order(o: Order):
     order = OrderDB(id=o.id, weight=o.weight, region=o.region)
+    delivery_hours = [TimeSegment(dh) for dh in o.delivery_hours]
+    order.delivery_hours = [
+        OrdersDeliveryHours(begin=dh.begin.sum, end=dh.end.sum) for dh in delivery_hours
+    ]
     db.session.add(order)
     try:
         db.session.commit()
@@ -175,8 +208,10 @@ def insert_order(o: Order):
         db.session.rollback()
         raise Exception("not uniq id")
 
+
 def insert_complete(o: Completed_order):
     pass
+
 
 def assign_orders_to_courier(courier: Courier):
     print(courier)
