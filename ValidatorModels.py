@@ -1,4 +1,4 @@
-from pydantic import BaseModel, validator, ValidationError, Field, condecimal, conint
+from pydantic import BaseModel, validator, ValidationError, Field, confloat, conint
 from typing import List, Literal, Optional
 import re
 from datetime import datetime
@@ -68,9 +68,9 @@ class TimeSegment:
 
 
 class Courier(BaseModel):
-    id: Optional[int] = Field(alias='courier_id')
+    id: Optional[conint(ge=0)] = Field(alias='courier_id')
     type: Optional[Literal["foot", "bike", "car"]] = Field(alias='courier_type')
-    regions: Optional[List[int]]
+    regions: Optional[List[conint(ge=0)]]
     working_hours: Optional[List[TimeSegment]]
 
     class Config:
@@ -82,16 +82,14 @@ class Courier(BaseModel):
 
 
 class Order(BaseModel):
-    id: int = Field(alias='order_id')
-    weight: condecimal(ge=0.01, le=50)
+    id: conint(ge=0) = Field(alias='order_id')
+    weight: confloat(ge=0.01, le=50)
     region: conint(ge=0)
     delivery_hours: List[TimeSegment]
 
-    @validator('id', 'weight', 'region')
-    def field_is_positive(cls, v):
-        assert v >= 0
-        return v
-
+    @validator('weight')
+    def two_numbers_after_dot(cls, v):
+        return round(v, 2)
     class Config:
         extra = 'forbid'
         json_encoders = {
@@ -101,7 +99,7 @@ class Order(BaseModel):
 
 
 class Id(BaseModel):
-    id: int
+    id: conint(ge=0)
 
 
 class List_ids(BaseModel):
@@ -115,13 +113,8 @@ class List_validation_error(BaseModel):
 
 
 class Completed_order(BaseModel):
-    courier_id: int
-    order_id: int
+    courier_id: conint(ge=0)
+    order_id: conint(ge=0)
     complete_time: datetime
-
-    @validator('courier_id', 'order_id')
-    def fields_is_positive(cls, v):
-        assert v >= 0
-        return v
 
 

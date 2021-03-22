@@ -1,12 +1,11 @@
-from flask import  request
+from flask import request
 from pydantic import ValidationError
 from ValidatorModels import Courier, Completed_order, Order, List_ids, List_validation_error, TimeSegment, Id
 
-from ModelsDB import app, db, CourierDB, CourierWorkingHours, CourierRegion, OrderDB, OrdersDeliveryHours, Assigned_Order
+from ModelsDB import app, db, CourierDB, CourierWorkingHours, CourierRegion, OrderDB, OrdersDeliveryHours, \
+    Assigned_Order
 
 import json
-
-
 
 lifting_capacity = {
     'foot': 10,
@@ -14,7 +13,14 @@ lifting_capacity = {
     'car': 50
 }
 
-
+def get_data(id: int):
+    cDB = db.session.query(CourierDB).filter_by(id=id).one()
+    ans = Courier()
+    ans.id = id
+    ans.type = cDB.type
+    ans.regions = [r.region for r in cDB.regions]
+    ans.working_hours = [TimeSegment.by_sums(wh.begin, wh.end) for wh in cDB.working_hours]
+    return ans.json()
 def insert_courier(c: Courier):
     courier = CourierDB(id=c.id, type=c.type)
     courier.regions = [
@@ -43,9 +49,22 @@ def insert_order(o: Order):
         db.session.rollback()
         raise Exception("not uniq id")
 
+def recalculate_reiting(courier_id, order_id, region, dt):
+    print(dt)
+    pass
+
 
 def insert_complete(o: Completed_order):
-    pass
+    cur_rec = db.session.query(Assigned_Order).filter_by(id_order=o.order_id, id_courier=o.courier_id).one()
+    cur_o = db.session.query(OrderDB).filter_by(id=o.order_id).one()
+    recalculate_reiting(o.courier_id, o.order_id, cur_o.region,
+                        o.complete_time.replace(tzinfo=None) - cur_rec.time.replace(tzinfo=None)
+                        )
+    db.session.query(OrderDB).filter_by(id=o.order_id).delete()
+    db.session.query(Assigned_Order).filter_by(id_order=o.order_id, id_courier=o.courier_id).delete()
+    db.session.commit()
+
+
 
 def import_data_from_db(courier: Courier):
     courier_db = db.session.query(CourierDB).filter_by(id=courier.id).one()
@@ -68,6 +87,7 @@ def import_data_from_db(courier: Courier):
     sorted_times_order = sorted(not_sorted_orders, key=lambda x: x[0])
     return sorted_times_order, sorted_workig_hours, courier_db
 
+
 def choose_orders(times_order, working_hours):
     orders = []
     size_of_orders = len(times_order)
@@ -80,15 +100,16 @@ def choose_orders(times_order, working_hours):
         while cur_i < size_of_orders and times_order[cur_i][0] < wend:
             if cur_end_of_order <= times_order[cur_i][0] and \
                     times_order[cur_i][1] <= wend:  # если не выполняем заказов и успеем в нашу смену
-                orders.append(times_order[cur_i][2])  # берем новый заказ
-                cur_end_of_order = times_order[cur_i][1]  # запоминаем когда закончится
-                cur_end_of_order = times_order[cur_i][1]  # запоминаем когда закончится
+                if times_order[cur_i][2] not in orders:
+                    orders.append(times_order[cur_i][2])  # берем новый заказ
+                    cur_end_of_order = times_order[cur_i][1]  # запоминаем когда закончится
             else:
                 if cur_end_of_order >= times_order[cur_i][1]:  # если текущий заказ закончится позже
-                    orders[-1] = times_order[cur_i][2]  # берем тот который выполнить быстрее
-                    cur_end_of_order = times_order[cur_i][1]  # запоминаем когда закончится
+                    if times_order[cur_i][2] not in orders:
+                        orders[-1] = times_order[cur_i][2]  # берем тот который выполнить быстрее
+                        cur_end_of_order = times_order[cur_i][1]  # запоминаем когда закончится
             cur_i += 1
-    return orders
+    return list(set(orders))
 
 
 def assign_orders_to_courier(courier: Courier):
@@ -115,12 +136,16 @@ def assign_orders_to_courier(courier: Courier):
     else:
         ans = "{\"orders\": []}"
 
-
     return ans
 
 
 def correct_assigned_orders(c: Courier):
-    pass
+    orders = db.session.query(Assigned_Order).filter_by(id_courier=c.id).all()
+    capacity = lifting_capacity[c.type]
+    for order in orders:
+        if order.order.weight > capacity or order.order.region not in c.regions:
+            db.session.query(Assigned_Order).filter_by(id_order=order.id_order).delete()
+    db.session.commit()
 
 
 def update_db(courier_update: Courier):
@@ -132,8 +157,9 @@ def update_db(courier_update: Courier):
         current_courier.regions = [CourierRegion(region=r) for r in courier_update.regions]
     if courier_update.working_hours is not None:
         db.session.query(CourierWorkingHours).filter_by(id=courier_update.id).delete()
-        current_courier.working_hours = [CourierWorkingHours(begin=wh.begin.sum, end=wh.end.sum) for wh in
-                                         courier_update.working_hours]
+        current_courier.working_hours = [
+            CourierWorkingHours(begin=wh.begin.sum, end=wh.end.sum) for wh in courier_update.working_hours
+        ]
     db.session.commit()
     correct_assigned_orders(courier_update)
 
@@ -229,9 +255,18 @@ def orders_complete_post():
     try:
         order = Completed_order.parse_raw(request.get_data())
         insert_complete(order)
-    except:
+    except Exception as e:
         return "Bad value", 400
     return f"{{ \"order_id\": {order.order_id} }}", 200
+
+
+@app.route('/couriers/<int:id>', methods=['GET'])
+def get_courier_data(id):
+    try:
+
+        return get_data(id)
+    except Exception as e:
+        return "[]", 400
 
 
 if __name__ == '__main__':
