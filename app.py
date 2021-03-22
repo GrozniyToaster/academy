@@ -47,16 +47,7 @@ def insert_order(o: Order):
 def insert_complete(o: Completed_order):
     pass
 
-
-def assign_orders_to_courier(courier: Courier):
-    print(courier)
-    # checkin order availability
-    orders = db.session.query(Assigned_Order).filter_by(id_courier=courier.id).all()
-    if orders:
-        ans = List_ids()
-        ans.orders = [order.id_order for order in orders]
-        ans.assign_time = orders[0].time
-        return ans.json(exclude_defaults=True)
+def import_data_from_db(courier: Courier):
     courier_db = db.session.query(CourierDB).filter_by(id=courier.id).one()
     regions = [r.region for r in courier_db.regions]
     capacity = lifting_capacity[courier_db.type]
@@ -75,25 +66,42 @@ def assign_orders_to_courier(courier: Courier):
         not_sorted_working_hours.append([wh.begin, wh.end])
     sorted_workig_hours = sorted(not_sorted_working_hours, key=lambda x: x[0])
     sorted_times_order = sorted(not_sorted_orders, key=lambda x: x[0])
+    return sorted_times_order, sorted_workig_hours, courier_db
+
+def choose_orders(times_order, working_hours):
     orders = []
-    size_of_orders = len(sorted_times_order)
+    size_of_orders = len(times_order)
     cur_i = 0
-    for wbegin, wend in sorted_workig_hours:
-        while cur_i < size_of_orders and sorted_times_order[cur_i][0] < wbegin:
+    for wbegin, wend in working_hours:
+        while cur_i < size_of_orders and times_order[cur_i][0] < wbegin:
             cur_i += 1
         cur_end_of_order = wbegin
 
-        while cur_i < size_of_orders and sorted_times_order[cur_i][0] < wend:
-            if cur_end_of_order <= sorted_times_order[cur_i][0] and \
-                    sorted_times_order[cur_i][1] <= wend : # если не выполняем заказов и успеем в нащу смену
-                orders.append(sorted_times_order[cur_i][2])     # берем новый заказ
-                cur_end_of_order = sorted_times_order[cur_i][1] # запоминаем когда закончится
+        while cur_i < size_of_orders and times_order[cur_i][0] < wend:
+            if cur_end_of_order <= times_order[cur_i][0] and \
+                    times_order[cur_i][1] <= wend:  # если не выполняем заказов и успеем в нашу смену
+                orders.append(times_order[cur_i][2])  # берем новый заказ
+                cur_end_of_order = times_order[cur_i][1]  # запоминаем когда закончится
+                cur_end_of_order = times_order[cur_i][1]  # запоминаем когда закончится
             else:
-                if cur_end_of_order >= sorted_times_order[cur_i][1]: # если текущий заказ закончится позже
-                    orders[-1] = sorted_times_order[cur_i][2]        # берем тот который выполнить быстрее
-                    cur_end_of_order = sorted_times_order[cur_i][1]  # запоминаем когда закончится
+                if cur_end_of_order >= times_order[cur_i][1]:  # если текущий заказ закончится позже
+                    orders[-1] = times_order[cur_i][2]  # берем тот который выполнить быстрее
+                    cur_end_of_order = times_order[cur_i][1]  # запоминаем когда закончится
             cur_i += 1
+    return orders
 
+
+def assign_orders_to_courier(courier: Courier):
+    # checkin order availability
+    orders = db.session.query(Assigned_Order).filter_by(id_courier=courier.id).all()
+    if orders:
+        ans = List_ids()
+        ans.orders = [order.id_order for order in orders]
+        ans.assign_time = orders[0].time
+        return ans.json(exclude_defaults=True)
+
+    times_order, working_hours, courier_db = import_data_from_db(courier)
+    orders = choose_orders(times_order, working_hours)
 
     if orders:
         courier_db.assigned = [
