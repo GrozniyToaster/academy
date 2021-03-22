@@ -9,7 +9,7 @@ from sqlalchemy import ForeignKey, PrimaryKeyConstraint
 from sqlalchemy.orm import relationship
 
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///data.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///data.db?check_same_thread=False'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
@@ -43,7 +43,7 @@ class CourierRegion(db.Model):
     )
     id = db.Column(db.Integer, ForeignKey('couriers.id'))
     region = db.Column(db.Integer, nullable=False)
-    courier = relationship('CourierDB', backref="regions")
+    courier = relationship('CourierDB',cascade = "all,delete", backref="regions")
 
     def __repr__(self):
         return f'<CourierRegion({self.id}, {self.region})>'
@@ -254,12 +254,11 @@ def update_db(courier_update: Courier):
     if courier_update.type is not None:
         current_courier.type = courier_update.type
     if courier_update.regions is not None:
-        to_delete = db.session.query(CourierRegion).filter_by(id=courier_update.id).all()
-        db.session.delete(to_delete)
-        db.session.commit()
+        db.session.query(CourierRegion).filter_by(id=courier_update.id).delete()
         current_courier.regions = [CourierRegion(region=r) for r in courier_update.regions]
     if courier_update.working_hours is not None:
-        current_courier.working_hours = [CourierWorkingHours(begin=wh.begin, end=wh.end) for wh in courier_update.working_hours]
+        db.session.query(CourierWorkingHours).filter_by(id=courier_update.id).delete()
+        current_courier.working_hours = [CourierWorkingHours(begin=wh.begin.sum, end=wh.end.sum) for wh in courier_update.working_hours]
     db.session.commit()
     correct_assigned_orders(courier_update)
 
