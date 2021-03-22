@@ -1,220 +1,18 @@
-from flask import Flask, request
-from pydantic import BaseModel, validator, ValidationError, Field, condecimal, conint
-from typing import List, Literal, Optional
-from datetime import datetime
-import re
-import json
-from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import ForeignKey, PrimaryKeyConstraint
-from sqlalchemy.orm import relationship
+from flask import  request
+from pydantic import ValidationError
+from ValidatorModels import Courier, Completed_order, Order, List_ids, List_validation_error, TimeSegment, Id
 
-app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///data.db?check_same_thread=False'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db = SQLAlchemy(app)
+from ModelsDB import app, db, CourierDB, CourierWorkingHours, CourierRegion, OrderDB, OrdersDeliveryHours, Assigned_Order
+
+import json
+
+
 
 lifting_capacity = {
     'foot': 10,
     'bike': 15,
     'car': 50
 }
-
-
-class OrderDB(db.Model):
-    __tablename__ = 'orders'
-
-    id = db.Column(db.Integer, primary_key=True)
-    weight = db.Column(db.Float, nullable=False)
-    region = db.Column(db.Integer, nullable=False)
-
-    def __repr__(self):
-        return f'<OrderDB({self.id}, {self.weight}, {self.region})>'
-
-
-class CourierDB(db.Model):
-    __tablename__ = 'couriers'
-
-    id = db.Column(db.Integer, primary_key=True)
-    type = db.Column(db.String(4), nullable=False)
-
-    def __repr__(self):
-        return f'<CourierDB({self.id}, {self.type}>'
-
-
-class CourierRegion(db.Model):
-    __tablename__ = 'couriers_regions'
-    __table_args__ = (
-        PrimaryKeyConstraint('id', 'region'),
-        {},
-    )
-    id = db.Column(db.Integer, ForeignKey('couriers.id'))
-    region = db.Column(db.Integer, nullable=False)
-    courier = relationship('CourierDB', cascade="all,delete", backref="regions")
-
-    def __repr__(self):
-        return f'<CourierRegion({self.id}, {self.region})>'
-
-
-class CourierWorkingHours(db.Model):
-    __tablename__ = 'couriers_working_hours'
-    __table_args__ = (
-        PrimaryKeyConstraint('id', 'begin', 'end'),
-        {},
-    )
-    id = db.Column(db.Integer, ForeignKey('couriers.id'))
-    begin = db.Column(db.Integer, nullable=False)
-    end = db.Column(db.Integer, nullable=False)
-    courier = relationship('CourierDB', cascade="all,delete", backref="working_hours")
-
-    def __repr__(self):
-        return f'<CourierWorkingHours({self.id}, {self.begin}, {self.end})>'
-
-
-class Assigned_Order(db.Model):
-    __tablename__ = 'assigned_orders'
-    id_courier = db.Column(db.Integer, nullable=False)
-    id_order = db.Column(db.Integer, ForeignKey('orders.id'), primary_key=True)
-    time = db.Column(db.DateTime, default=datetime.utcnow)
-    order = relationship('OrderDB', cascade="all,delete", backref="assigned")
-
-    def __repr__(self):
-        return f'<Assigned_Order({self.id_order},{self.id_courier},{self.time})>'
-
-
-class OrdersDeliveryHours(db.Model):
-    __tablename__ = 'orders_delivery_hours'
-    __table_args__ = (
-        PrimaryKeyConstraint('id', 'begin', 'end'),
-        {},
-    )
-    id = db.Column(db.Integer, ForeignKey('orders.id'))
-    begin = db.Column(db.Integer, nullable=False)
-    end = db.Column(db.Integer, nullable=False)
-    order = relationship('OrderDB', cascade="all,delete", backref="delivery_hours")
-
-    def __repr__(self):
-        return f'<OrdersDeliveryHours({self.id}, {self.begin}, {self.end})>'
-
-
-class Time:
-    def __init__(self, s: str = "00:00"):
-        self.h, self.m = map(int, s.split(':'))
-        assert 0 <= self.h <= 24 and 0 <= self.m <= 60  # check valid time
-        self.sum = self.h * 60 + self.m
-
-    @classmethod
-    def from_sum(cls, sum: int):
-        if not isinstance(sum, int):
-            raise ValueError("Not valid time")
-        if sum > 1439 or sum < 0:  # 23:59 in minutes
-            raise ValueError(f"{sum} > 23:59 in minutes or sum < 0")
-        obj = cls()
-        obj.sum = sum
-        obj.h = sum // 60
-        obj.m = sum % 60
-        return obj
-
-    def __str__(self):
-        return f"{self.h:02d}:{self.m:02d}"
-
-    def __repr__(self):
-        return f"Time({str(self)})"
-
-
-class TimeSegment:
-    def __init__(self, seg: str = "00:00-00:01"):
-        times = re.findall(r'^\d{2}:\d{2}-\d{2}:\d{2}$', seg)
-        if not times:
-            raise ValueError("Not valid time")
-        begin, end = (times[0]).split('-')
-        self.begin = Time(begin)
-        self.end = Time(end)
-        if self.begin.sum >= self.end.sum:  # если конец раньше чем начало данные не валидны
-            raise ValueError("Not valid time")
-
-    @classmethod
-    def by_sums(cls, s1, s2):
-        if s1 > s2:
-            raise ValueError("Not valid time")
-        obj = cls()
-        obj.begin = Time.from_sum(s1)
-        obj.end = Time.from_sum(s2)
-        return obj
-
-    def __str__(self):
-        return f"{self.begin}-{self.end}"
-
-    @classmethod
-    def validate(cls, v):
-        if not isinstance(v, str):
-            raise ValueError(f'str expected, got {type(v)}')
-        return cls(v)
-
-    @classmethod
-    def __get_validators__(cls):
-        yield cls.validate
-
-    def __repr__(self):
-        return f"TimeSegment({self.begin}-{self.end})"
-
-
-class Courier(BaseModel):
-    id: Optional[int] = Field(alias='courier_id')
-    type: Optional[Literal["foot", "bike", "car"]] = Field(alias='courier_type')
-    regions: Optional[List[int]]
-    working_hours: Optional[List[TimeSegment]]
-
-    class Config:
-        extra = 'forbid'
-        json_encoders = {
-            TimeSegment: lambda v: str(v),
-
-        }
-
-
-class Order(BaseModel):
-    id: int = Field(alias='order_id')
-    weight: condecimal(ge=0.01, le=50)
-    region: conint(ge=0)
-    delivery_hours: List[TimeSegment]
-
-    @validator('id', 'weight', 'region')
-    def field_is_positive(cls, v):
-        assert v >= 0
-        return v
-
-    class Config:
-        extra = 'forbid'
-        json_encoders = {
-            TimeSegment: lambda v: str(v),
-
-        }
-
-
-class Id(BaseModel):
-    id: int
-
-
-class List_ids(BaseModel):
-    couriers: Optional[List[Id]] = []
-    orders: Optional[List[Id]] = []
-    assign_time: Optional[datetime] = None
-
-
-class List_validation_error(BaseModel):
-    validation_error: List_ids = List_ids()
-
-
-class Completed_order(BaseModel):
-    courier_id: int
-    order_id: int
-    complete_time: datetime
-
-    @validator('courier_id', 'order_id')
-    def fields_is_positive(cls, v):
-        assert v >= 0
-        return v
-
 
 
 def insert_courier(c: Courier):
@@ -255,7 +53,10 @@ def assign_orders_to_courier(courier: Courier):
     # checkin order availability
     orders = db.session.query(Assigned_Order).filter_by(id_courier=courier.id).all()
     if orders:
-        pass
+        ans = List_ids()
+        ans.orders = [order.id_order for order in orders]
+        ans.assign_time = orders[0].time
+        return ans.json(exclude_defaults=True)
     courier_db = db.session.query(CourierDB).filter_by(id=courier.id).one()
     regions = [r.region for r in courier_db.regions]
     capacity = lifting_capacity[courier_db.type]
@@ -264,19 +65,50 @@ def assign_orders_to_courier(courier: Courier):
         vocant_orders.append(db.session.query(OrderDB).filter(OrderDB.region == r).all())
 
     not_sorted_orders = []
+    not_sorted_working_hours = []
     for group_region in vocant_orders:
         for order in group_region:
-            if order.weight <= capacity:
+            if order.weight <= capacity and db.session.query(Assigned_Order).filter_by(id_order=order.id).all() == []:
                 for dh in order.delivery_hours:
-                    not_sorted_orders.append([dh.begin, order.id])
-                    not_sorted_orders.append([dh.end, order.id])
+                    not_sorted_orders.append([dh.begin, dh.end, order.id])
     for wh in courier_db.working_hours:
-        not_sorted_orders.append([wh.begin, -1])
-        not_sorted_orders.append([wh.end, -1])
-    sorted_times = sorted(not_sorted_orders, key=lambda x: x[0])
+        not_sorted_working_hours.append([wh.begin, wh.end])
+    sorted_workig_hours = sorted(not_sorted_working_hours, key=lambda x: x[0])
+    sorted_times_order = sorted(not_sorted_orders, key=lambda x: x[0])
+    orders = []
+    size_of_orders = len(sorted_times_order)
+    cur_i = 0
+    for wbegin, wend in sorted_workig_hours:
+        while cur_i < size_of_orders and sorted_times_order[cur_i][0] < wbegin:
+            cur_i += 1
+        cur_end_of_order = wbegin
+
+        while cur_i < size_of_orders and sorted_times_order[cur_i][0] < wend:
+            if cur_end_of_order <= sorted_times_order[cur_i][0] and \
+                    sorted_times_order[cur_i][1] <= wend : # если не выполняем заказов и успеем в нащу смену
+                orders.append(sorted_times_order[cur_i][2])     # берем новый заказ
+                cur_end_of_order = sorted_times_order[cur_i][1] # запоминаем когда закончится
+            else:
+                if cur_end_of_order >= sorted_times_order[cur_i][1]: # если текущий заказ закончится позже
+                    orders[-1] = sorted_times_order[cur_i][2]        # берем тот который выполнить быстрее
+                    cur_end_of_order = sorted_times_order[cur_i][1]  # запоминаем когда закончится
+            cur_i += 1
 
 
-    return "WIP"
+    if orders:
+        courier_db.assigned = [
+            Assigned_Order(id_order=oid) for oid in orders
+        ]
+        db.session.commit()
+        ans = List_ids()
+        ans.orders = orders
+        ans.assign_time = courier_db.assigned[0].time
+        ans = ans.json(exclude_defaults=True)
+    else:
+        ans = "{\"orders\": []}"
+
+
+    return ans
 
 
 def correct_assigned_orders(c: Courier):
@@ -284,7 +116,6 @@ def correct_assigned_orders(c: Courier):
 
 
 def update_db(courier_update: Courier):
-    print("to update ", courier_update)
     current_courier = db.session.query(CourierDB).filter_by(id=courier_update.id).one()
     if courier_update.type is not None:
         current_courier.type = courier_update.type
@@ -316,7 +147,6 @@ def couriers_post():
             courier_obj = Courier.parse_obj(courier_posted)
             valid_couriers_json.append(courier_obj)
         except ValidationError as e:
-            print(e.json())
             not_valid.validation_error.couriers.append(Id(id=courier_posted["courier_id"]))
 
     if not_valid.validation_error.couriers != []:
@@ -368,7 +198,7 @@ def orders_post():
         try:
             insert_order(order)
             valid_requests.orders.append(Id(id=order.id))
-        except:
+        except Exception as e:
             not_valid.validation_error.orders.append(Id(id=order.id))
 
     if not_valid.validation_error.orders != []:
