@@ -9,8 +9,7 @@ app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///data.db?check_same_thread=False'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
-
-
+db.create_all()
 
 
 class OrderDB(db.Model):
@@ -19,9 +18,10 @@ class OrderDB(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     weight = db.Column(db.Float, nullable=False)
     region = db.Column(db.Integer, nullable=False)
+    completed = db.Column(db.Boolean, default=False)
 
     def __repr__(self):
-        return f'<OrderDB({self.id}, {self.weight}, {self.region})>'
+        return f'<OrderDB({self.id}, {self.weight}, {self.region}, {self.completed})>'
 
 
 class CourierDB(db.Model):
@@ -29,9 +29,10 @@ class CourierDB(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     type = db.Column(db.String(4), nullable=False)
+    time_last_order = db.Column(db.DateTime)
 
     def __repr__(self):
-        return f'<CourierDB({self.id}, {self.type}>'
+        return f'<CourierDB({self.id}, {self.type}, {self.time_last_order}>'
 
 
 class CourierRegion(db.Model):
@@ -68,11 +69,12 @@ class Assigned_Order(db.Model):
     id_courier = db.Column(db.Integer, ForeignKey('couriers.id'))
     id_order = db.Column(db.Integer, ForeignKey('orders.id'), primary_key=True)
     time = db.Column(db.DateTime, default=datetime.utcnow)
+    type = db.Column(db.String(4), nullable=False)
     order = relationship('OrderDB', cascade="all,delete", backref="assigned")
     courier = relationship('CourierDB', cascade="all,delete", backref="assigned")
 
     def __repr__(self):
-        return f'<Assigned_Order({self.id_order},{self.id_courier},{self.time})>'
+        return f'<Assigned_Order({self.id_order}, {self.id_courier}, {self.time}, {self.type})>'
 
 
 class OrdersDeliveryHours(db.Model):
@@ -89,3 +91,25 @@ class OrdersDeliveryHours(db.Model):
     def __repr__(self):
         return f'<OrdersDeliveryHours({self.id}, {self.begin}, {self.end})>'
 
+
+def zero():
+    return 0
+
+
+class Rating(db.Model):
+    __tablename__ = 'rating'
+    __table_args__ = (
+        PrimaryKeyConstraint('id', 'region'),
+        {},
+    )
+    id = db.Column(db.Integer, ForeignKey('couriers.id'))
+    region = db.Column(db.Integer, nullable=False)
+    sum_dt = db.Column(db.Integer, default=db.null)
+    count_foot = db.Column(db.Integer)
+    count_bike = db.Column(db.Integer)
+    count_car = db.Column(db.Integer)
+    courier = relationship('CourierDB', cascade="all,delete", backref="rating")
+
+    def __repr__(self):
+        return f'<OrdersDeliveryHours({self.id}, {self.region}, {self.sum_dt}, \
+        {self.count_foot}, {self.count_bike}, {self.count_car})>'

@@ -16,7 +16,7 @@ class Time:
         if not isinstance(sum, int):
             raise ValueError("Not valid time")
         if sum > 1439 or sum < 0:  # 23:59 in minutes
-            raise ValueError(f"{sum} > 23:59 in minutes or sum < 0")
+            raise ValueError(f"{sum} > 23:59 in minutes or {sum} < 0")
         obj = cls()
         obj.sum = sum
         obj.h = sum // 60
@@ -66,25 +66,38 @@ class TimeSegment:
     def __repr__(self):
         return f"TimeSegment({self.begin}-{self.end})"
 
-
-class Courier(BaseModel):
-    id: Optional[conint(ge=0)] = Field(alias='courier_id')
-    type: Optional[Literal["foot", "bike", "car"]] = Field(alias='courier_type')
-    regions: Optional[List[conint(ge=0)]]
-    working_hours: Optional[List[TimeSegment]]
+class CourierStrong(BaseModel):
+    id: conint(gt=0) = Field(alias='courier_id')
+    type: Literal["foot", "bike", "car"] = Field(alias='courier_type')
+    regions: List[conint(gt=0)]
+    working_hours: List[TimeSegment]
 
     class Config:
         extra = 'forbid'
         json_encoders = {
-            TimeSegment: lambda v: str(v),
+            TimeSegment: lambda v: str(v)
+        }
 
+
+class CourierOptional(BaseModel):
+    id: Optional[conint(gt=0)] = Field(alias='courier_id')
+    type: Optional[Literal["foot", "bike", "car"]] = Field(alias='courier_type')
+    regions: Optional[List[conint(gt=0)]]
+    working_hours: Optional[List[TimeSegment]]
+    rating: Optional[float] = None
+    earnings: Optional[int] = None
+
+    class Config:
+        extra = 'forbid'
+        json_encoders = {
+            TimeSegment: lambda v: str(v)
         }
 
 
 class Order(BaseModel):
-    id: conint(ge=0) = Field(alias='order_id')
+    id: conint(gt=0) = Field(alias='order_id')
     weight: confloat(ge=0.01, le=50)
-    region: conint(ge=0)
+    region: conint(gt=0)
     delivery_hours: List[TimeSegment]
 
     @validator('weight')
@@ -99,7 +112,7 @@ class Order(BaseModel):
 
 
 class Id(BaseModel):
-    id: conint(ge=0)
+    id: conint(gt=0)
 
 
 class List_ids(BaseModel):
@@ -107,14 +120,26 @@ class List_ids(BaseModel):
     orders: Optional[List[Id]] = []
     assign_time: Optional[datetime] = None
 
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
+        }
+
 
 class List_validation_error(BaseModel):
     validation_error: List_ids = List_ids()
+    additionalProp: Optional[List[str]] = []
 
 
 class Completed_order(BaseModel):
-    courier_id: conint(ge=0)
-    order_id: conint(ge=0)
+    courier_id: conint(gt=0)
+    order_id: conint(gt=0)
     complete_time: datetime
+
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
+
+        }
 
 
