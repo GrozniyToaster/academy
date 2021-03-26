@@ -5,11 +5,22 @@ from sqlalchemy import ForeignKey, PrimaryKeyConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime
 
-app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///data.db?check_same_thread=False'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db = SQLAlchemy(app)
-db.create_all()
+
+def create_app():
+    app = Flask(__name__)
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///data.db?check_same_thread=False'
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    return app
+
+
+def create_db():
+    db = SQLAlchemy(app)
+    db.create_all()
+    return db
+
+
+app = create_app()
+db = create_db()
 
 
 class OrderDB(db.Model):

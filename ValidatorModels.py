@@ -1,4 +1,4 @@
-from pydantic import BaseModel, validator, ValidationError, Field, confloat, conint
+from pydantic import BaseModel, validator, ValidationError, Field, confloat, conint, conlist
 from typing import List, Literal, Optional
 import re
 from datetime import datetime
@@ -43,7 +43,7 @@ class TimeSegment:
 
     @classmethod
     def by_sums(cls, s1, s2):
-        if s1 > s2:
+        if s1 >= s2:
             raise ValueError("Not valid time")
         obj = cls()
         obj.begin = Time.from_sum(s1)
@@ -82,7 +82,7 @@ class CourierStrong(BaseModel):
 class CourierOptional(BaseModel):
     id: Optional[conint(gt=0)] = Field(alias='courier_id')
     type: Optional[Literal["foot", "bike", "car"]] = Field(alias='courier_type')
-    regions: Optional[List[conint(gt=0)]]
+    regions: Optional[List[conint(gt=0)]] = None
     working_hours: Optional[List[TimeSegment]]
     rating: Optional[float] = None
     earnings: Optional[int] = None
@@ -98,11 +98,12 @@ class Order(BaseModel):
     id: conint(gt=0) = Field(alias='order_id')
     weight: confloat(ge=0.01, le=50)
     region: conint(gt=0)
-    delivery_hours: List[TimeSegment]
+    delivery_hours: conlist(TimeSegment, min_items=1)
 
     @validator('weight')
     def two_numbers_after_dot(cls, v):
         return round(v, 2)
+
     class Config:
         extra = 'forbid'
         json_encoders = {
@@ -111,8 +112,9 @@ class Order(BaseModel):
         }
 
 
+
 class Id(BaseModel):
-    id: conint(gt=0)
+    id: int
 
 
 class List_ids(BaseModel):

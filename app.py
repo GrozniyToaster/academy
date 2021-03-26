@@ -52,7 +52,7 @@ def get_data(id: int):
     ans.working_hours = [TimeSegment.by_sums(wh.begin, wh.end) for wh in cDB.working_hours]
     ans.rating = rating
     ans.earnings = payment
-    return ans.json(exclude_defaults=True)
+    return ans.json(exclude_defaults=True, by_alias=True)
 
 
 def insert_courier(c: CourierStrong):
@@ -199,7 +199,7 @@ def add_rec_assigned_order(orders: List[int], courier: CourierDB):
         ans = List_ids()
         ans.orders = orders
         ans.assign_time = courier.assigned[0].time
-        ans = ans.json(exclude_defaults=True)
+        ans = ans.json(exclude_defaults=True, by_alias=True)
     else:
         ans = "{\"orders\": []}"
 
@@ -213,7 +213,7 @@ def assign_orders_to_courier(courier: CourierOptional):
         ans = List_ids()
         ans.orders = [order.id_order for order in orders]
         ans.assign_time = orders[0].time
-        return ans.json(exclude_defaults=True)
+        return ans.json(exclude_defaults=True, by_alias=True)
 
     orders, courier_db = import_data_from_db(courier)
     return add_rec_assigned_order(orders, courier_db)
@@ -262,12 +262,14 @@ def update_db(courier_update: CourierOptional):
             CourierWorkingHours(begin=wh.begin.sum, end=wh.end.sum) for wh in courier_update.working_hours
         ]
     db.session.commit()
-    correct_assigned_orders(courier_update)
-
-    # forming answer
+    # forming answer and deprecate not valid orders
     courier_update.type = current_courier.type
     courier_update.regions = [r.region for r in current_courier.regions]
     courier_update.working_hours = [TimeSegment.by_sums(ts.begin, ts.end) for ts in current_courier.working_hours]
+    correct_assigned_orders(courier_update)
+
+
+
     return courier_update
 
 
@@ -309,7 +311,7 @@ def couriers_post():
             not_valid.validation_error.couriers.append(Id(id=courier.id))
     if not_valid.validation_error.couriers:
         return not_valid.json(exclude_defaults=True), 400
-    return valid_requests.json(exclude_defaults=True), 201
+    return valid_requests.json(exclude_defaults=True, by_alias=True), 201
 
 
 @app.route('/couriers/<int:id>', methods=['PATCH'])
@@ -319,11 +321,11 @@ def couriers_patch(id):
         update_fields.id = id
         updated = update_db(update_fields)
     except Exception as e:
-        return "{\"error\": \"required field to patch in courier_type , regions ,working_hours\"}", 400
-    return updated.json()
+        return "{\"error\": \"id must be in system and required field to patch in courier_type , regions ,working_hours\"}", 400
+    return updated.json(exclude_defaults=True, by_alias=True), 200
 
 
-@app.route('/orders', methods=['POST'])
+@app.route('/orders', methods=['POST'], strict_slashes=False)
 def orders_post():
     valid_orders_json = []
     not_valid = List_validation_error()
@@ -362,7 +364,7 @@ def orders_post():
 
     if not_valid.validation_error.orders:
         return not_valid.json(exclude_defaults=True), 400
-    return valid_requests.json(exclude_defaults=True), 201
+    return valid_requests.json(exclude_defaults=True, by_alias=True), 201
 
 
 @app.route('/orders/assign', methods=['POST'])
@@ -392,6 +394,16 @@ def get_courier_data(id):
     except Exception as e:
         return f'{{ "error": {str(e)} }}', 400
 
+@app.route('/clear', methods=['POST'])
+def clear():
+    rec = json.loads(request.get_data())
+    if rec['pass'] != 4685:
+        return "", 404
+    db.drop_all()
+    db.create_all()
+    return '', 200
+
 
 if __name__ == '__main__':
-    app.run(host="localhost", port=8080, debug=True)
+    db.create_all()
+    app.run(host="127.0.0.1", port=8080, debug=True)
