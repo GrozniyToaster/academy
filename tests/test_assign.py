@@ -291,7 +291,88 @@ class CouriersPostTestCase(unittest.TestCase):
         self.assertEqual(ans.status_code, 200)
         self.assertEqual(json.loads(ans.text), expected)
 
+    def test_border(self):
+        data = """
+            {
+                "data": [ 
+                        {
+                    "courier_id": 4,
+                    "courier_type": "foot",
+                    "regions": [
+                        1,
+                        12
+                    ],
+                    "working_hours": [
+                        "09:00-11:00"
+                    ]
+                }
+                ]
 
+            }
+            """
+        expected = {
+            "couriers": [
+                {"id": 4}
+            ]
+        }
+
+        ans = requests.post(self.adress + '/couriers', data=data)
+        self.assertEqual(ans.status_code, 201)
+        self.assertEqual(json.loads(ans.text), expected)
+
+        data = """
+                    {
+                        "data": [
+                                {
+                                        "order_id": 1,
+                                        "weight": 0.01,
+                                        "region": 12,
+                                        "delivery_hours": ["00:00-09:00"]
+                                },{
+                                        "order_id": 2,
+                                        "weight": 9.62,
+                                        "region": 12,
+                                        "delivery_hours": ["11:00-23:25"]
+                                },{
+                                        "order_id": 5,
+                                        "weight": 9.63,
+                                        "region": 12,
+                                        "delivery_hours": ["00:00-09:01"]
+                                },{
+                                        "order_id": 6,
+                                        "weight": 0.3,
+                                        "region": 13,
+                                        "delivery_hours": ["10:00-12:59"]
+                                },{
+                                        "order_id": 7,
+                                        "weight": 14.5,
+                                        "region": 1,
+                                        "delivery_hours": ["00:00-00:15"]
+                                }
+                        ]
+                    }
+                    """
+        expected = {
+            "orders": [
+                {"id": 1},
+                {"id": 2},
+                {"id": 5},
+                {"id": 6},
+                {"id": 7}
+            ]
+        }
+
+        ans = requests.post(self.adress + '/orders', data=data)
+        self.assertEqual(ans.status_code, 201)
+        self.assertEqual(json.loads(ans.text), expected)
+
+        expected = {
+            "orders": []
+        }
+
+        ans = requests.post(self.adress + '/orders/assign', data='{ "courier_id": 4}')
+        self.assertEqual(ans.status_code, 200)
+        self.assertEqual(json.loads(ans.text), expected)
 
 if __name__ == "__main__":
     unittest.main()

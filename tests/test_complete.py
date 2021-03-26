@@ -130,12 +130,12 @@ class CouriersPostTestCase(unittest.TestCase):
         self.assertEqual(ans.status_code, 400)
 
         data = f"""
-                    {{
-                      "courier_id": 4,
-                      "order_id": 5,
-                      "complete_time": "{datetime.utcnow()}"
-                    }}
-                    """
+            {{
+              "courier_id": 4,
+              "order_id": 5,
+              "complete_time": "{datetime.utcnow()}"
+            }}
+            """
         expected = {
             "order_id": 5
         }
@@ -147,15 +147,6 @@ class CouriersPostTestCase(unittest.TestCase):
         self.assertEqual(ans.status_code, 200)
         self.assertEqual(expected, json.loads(ans.text))
 
-
-
-
-
-
-
-
-    def test_logic_update(self):
-        pass
 
 
 
