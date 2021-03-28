@@ -7,7 +7,8 @@
  1. git clone git@github.com:GrozniyToaster/academy.git
  2. ./install.sh
 
-Запуск: python3 app.py
+Запуск: `python3 app.py`
+
 Стандартно запускается на 0.0.0.0:8080
 
 Запуск тестов: ./unittests.sh
