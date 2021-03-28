@@ -7,10 +7,12 @@
  1. git clone git@github.com:GrozniyToaster/academy.git
  2. ./install.sh
 
-Запуск: python3 app.py
+Запуск: `python3 app.py`
+
 Стандартно запускается на 0.0.0.0:8080
 
 Запуск тестов: ./unittests.sh
+
 Мажно запускать тесты на удаленной машине, для этого нужно прописать вместо localhost IP адрес тестируемой машины 
 (переменная класса теста self.address)
 
