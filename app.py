@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 from flask import request
 from pydantic import ValidationError
 from ValidatorModels import CourierOptional, CourierStrong, Completed_order, Order, List_ids, List_validation_error, \
