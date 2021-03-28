@@ -173,7 +173,7 @@ class CouriersPostTestCase(unittest.TestCase):
         self.assertEqual(json.loads(ans.text), expected)
 
         expected = {
-            "orders": [6]
+            "orders": [{'id': 6}]
         }
 
         ans = requests.post(self.adress + '/orders/assign', data='{"courier_id": 4}')
@@ -205,7 +205,7 @@ class CouriersPostTestCase(unittest.TestCase):
             }
         """
         expected = {
-            "orders": [5]
+            "orders": [{'id': 5}]
         }
 
         ans = requests.patch(self.adress + '/couriers/4', data=data)
@@ -252,7 +252,7 @@ class CouriersPostTestCase(unittest.TestCase):
                 """
 
         expected = {
-            "orders": [1, 5]
+            "orders": [{'id': 1}, {'id': 5}]
         }
         ans = requests.patch(self.adress + '/couriers/4', data=data)
         self.assertEqual(ans.status_code, 200)

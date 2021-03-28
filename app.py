@@ -26,37 +26,36 @@ payment_c = {
 }
 
 
-def calculate_rating(id: int):
+def recalculate_rating(id: int, type_last_pack: str):
+    courier = db.session.query(CourierDB).filter_by(id=id).one()
+    if courier.count_completed_orders_in_pack == 0:
+        return
     ranges = db.session.query(Rating).filter_by(id=id).all()
-    if not ranges:
-        return None, 0
     t = float('inf')
-    payment = 0
     for r in ranges:
-        payment += r.count_foot * payment_c['foot']
-        payment += r.count_bike * payment_c['bike']
-        payment += r.count_car * payment_c['car']
-        t = min(t, r.sum_dt / (r.count_foot + r.count_bike + r.count_car))
-    rating = (60 * 60 - min(t, 60 * 60)) / (60 * 60) * 5
-    payment *= 500
-    return rating, payment
+        t = min(t, r.sum_dt / r.count_orders)
+    courier.rating = round((60 * 60 - min(t, 60 * 60)) / (60 * 60) * 5, 2)
+    courier.earnings += 500 * payment_c[type_last_pack]
+    courier.count_completed_orders_in_pack = 0
+    db.session.commit()
 
 
 def get_data(id: int):
     cDB = db.session.query(CourierDB).filter_by(id=id).one()
-    rating, payment = calculate_rating(id)
+    rating, payment = cDB.rating, cDB.earnings
     ans = CourierOptional()
     ans.id = id
     ans.type = cDB.type
     ans.regions = [r.region for r in cDB.regions]
     ans.working_hours = [TimeSegment.by_sums(wh.begin, wh.end) for wh in cDB.working_hours]
-    ans.rating = rating
+    if rating != -1:
+        ans.rating = rating
     ans.earnings = payment
     return ans.json(exclude_defaults=True, by_alias=True)
 
 
 def insert_courier(c: CourierStrong):
-    courier = CourierDB(id=c.id, type=c.type)
+    courier = CourierDB(id=c.id, type=c.type, count_completed_orders_in_pack=0, earnings=0, rating=-1)
     courier.regions = [
         CourierRegion(region=r) for r in c.regions
     ]
@@ -66,7 +65,7 @@ def insert_courier(c: CourierStrong):
     db.session.add(courier)
     try:
         db.session.commit()
-    except:
+    except Exception as e:
         db.session.rollback()
         raise Exception("Courier already exist")
 
@@ -84,21 +83,16 @@ def insert_order(o: Order):
         raise Exception("not uniq id")
 
 
-def recalculate_rating(courier_id, order_id, region, dt, type):
+def update_rating_fields(courier_id, order_id, region, dt, type):
     try:
         rec = db.session.query(Rating).filter_by(id=courier_id, region=region).one()
         rec.sum_dt += round(dt.total_seconds())
 
     except:
         rec = Rating(id=courier_id, region=region, sum_dt=round(dt.total_seconds()),
-                     count_foot=0, count_bike=0, count_car=0)
+                     count_orders=0)
         db.session.add(rec)
-    if type == 'foot':
-        rec.count_foot += 1
-    elif type == 'bike':
-        rec.count_bike += 1
-    else:
-        rec.count_car += 1
+    rec.count_orders += 1
     db.session.commit()
 
 
@@ -107,37 +101,38 @@ def insert_complete(o: Completed_order):
     if cur_o.completed:
         return
     cur_rec = db.session.query(Assigned_Order).filter_by(id_order=o.order_id, id_courier=o.courier_id).one()
-    recalculate_rating(o.courier_id,
-                       o.order_id,
-                       cur_o.region,
-                       o.complete_time.replace(tzinfo=None) - cur_rec.courier.time_last_order,
-                       cur_rec.type
-                       )
+    cur_cour = db.session.query(CourierDB).filter_by(id=o.courier_id).one()
+    cur_cour.count_completed_orders_in_pack += 1
+    update_rating_fields(o.courier_id,
+                         o.order_id,
+                         cur_o.region,
+                         o.complete_time.replace(tzinfo=None) - cur_rec.courier.time_last_order,
+                         cur_rec.type
+                         )
 
+    type_pack = cur_rec.type
     cur_o.completed = True
     cur_rec.courier.time_last_order = o.complete_time
     db.session.query(Assigned_Order).filter_by(id_order=o.order_id, id_courier=o.courier_id).delete()
     db.session.commit()
+    if cur_cour.assigned == []:
+        recalculate_rating(o.courier_id, type_pack)
 
 
 def intersection_segments(a1, b1, a2, b2):
-    return not (
-            a1 < a2 and b1 < a2
-            or
-            a1 > b2 and b1 > b2
-    )
+    return (b2 > a1 and a2 < b1)
 
 
 def segregate(b, e):
     time = []
     if b < e:
-        if b + 1 <= e - 1:
-            time.append([b + 1, e - 1])
+        if b < e:
+            time.append([b, e])
     else:
         if b != 23 * 60 + 59:
-            time.append([b + 1, 23 * 60 + 59])
+            time.append([b, 23 * 60 + 59])
         if e != 0:
-            time.append([0, e - 1])
+            time.append([0, e])
     return time
 
 
@@ -151,6 +146,54 @@ def intersection_times(b1, e1, b2, e2):
     return False
 
 
+def get_max_orders(orders, cap):
+    n = len(orders)
+    c = generate_zero_matrix(n, cap + 1)
+    for i in range(0, n):
+        for j in range(0, cap + 1):
+            if (orders[i] > j):
+                c[i][j] = c[i - 1][j]
+            else:
+                c[i][j] = max(c[i - 1][j], orders[i] + c[i - 1][j - orders[i]])
+    return [c[n - 1][cap], to_bit_mask(orders, c)]
+
+
+def generate_zero_matrix(x, y):
+    row = []
+    data = []
+    for i in range(y):
+        row.append(0)
+    for i in range(x):
+        data.append(row[:])
+    return data
+
+
+def to_bit_mask(w, c):
+    i = len(c) - 1
+    curW = len(c[0]) - 1
+    mask = []
+    for i in range(i + 1):
+        mask.append(0)
+    while (i >= 0 and curW >= 0):
+        if (i == 0 and c[i][curW] > 0) or c[i][curW] != c[i - 1][curW]:
+            mask[i] = 1
+            curW = curW - w[i]
+        i = i - 1
+    return mask
+
+
+def choose_orders(valid_orders: List[OrderDB], cap: int):
+    if not valid_orders:
+        return []
+    orders_weight = [int(round(o.weight * 100)) for o in valid_orders]
+    max_size, packed = get_max_orders(orders_weight, cap * 100)
+    id_to_get = []
+    for i in range(len(packed)):
+        if packed[i]:
+            id_to_get.append(valid_orders[i].id)
+    return id_to_get
+
+
 def import_data_from_db(courier: CourierOptional):
     courier_db = db.session.query(CourierDB).filter_by(id=courier.id).one()
     regions = [r.region for r in courier_db.regions]
@@ -161,31 +204,24 @@ def import_data_from_db(courier: CourierOptional):
              OrderDB.region.in_(regions))
     ).order_by(OrderDB.weight).all()
 
-    orders = []
-    cur_size = 0
-    overfow = False
-
+    not_packed_orders = []
     for order in vocant_orders:
         if order.assigned:
             continue
-        if overfow:
-            break
         added = False
         for dh in order.delivery_hours:
-            if added or overfow:
+            if added:
                 break
             for wh in courier_db.working_hours:
-                if added or overfow:
+                if added:
                     break
                 if intersection_times(wh.begin, wh.end, dh.begin, dh.end):
-                    if cur_size + order.weight > capacity:
-                        overfow = True
-                        break
-                    orders.append(order.id)
-                    cur_size += order.weight
+                    not_packed_orders.append(order)
                     added = True
 
-    return orders, courier_db
+    orders_to_assign = choose_orders(not_packed_orders, capacity)
+
+    return orders_to_assign, courier_db
 
 
 def add_rec_assigned_order(orders: List[int], courier: CourierDB):
@@ -197,7 +233,7 @@ def add_rec_assigned_order(orders: List[int], courier: CourierDB):
         courier.time_last_order = time
         db.session.commit()
         ans = List_ids()
-        ans.orders = orders
+        ans.orders = list(map(lambda x: Id(id=x), orders))
         ans.assign_time = courier.assigned[0].time
         ans = ans.json(exclude_defaults=True, by_alias=True)
     else:
@@ -211,7 +247,7 @@ def assign_orders_to_courier(courier: CourierOptional):
     orders = db.session.query(Assigned_Order).filter_by(id_courier=courier.id).all()
     if orders:
         ans = List_ids()
-        ans.orders = [order.id_order for order in orders]
+        ans.orders = [Id(id=order.id_order) for order in orders]
         ans.assign_time = orders[0].time
         return ans.json(exclude_defaults=True, by_alias=True)
 
@@ -223,7 +259,10 @@ def correct_assigned_orders(c: CourierOptional):
     orders = db.session.query(Assigned_Order).filter_by(
         id_courier=c.id
     ).all()
+    if not orders:
+        return
     capacity = lifting_capacity[c.type]
+    pack_type = orders[0].type
     for order in orders:
         if order.order.weight > capacity or order.order.region not in c.regions:
             db.session.query(Assigned_Order).filter_by(id_order=order.id_order).delete()
@@ -235,18 +274,24 @@ def correct_assigned_orders(c: CourierOptional):
                 intersec = intersection_times(wh.begin.sum, wh.end.sum, dh.begin, dh.end)
         if not intersec:
             db.session.query(Assigned_Order).filter_by(id_order=order.id_order).delete()
+    db.session.commit()
 
     orders = db.session.query(Assigned_Order).filter_by(
         id_courier=c.id
     ).all()
-    sorted_orders = sorted(orders, key=lambda x: x.order.weight)
-    cur_size = 0
-    for o in sorted_orders:
-        if o.order.weight + cur_size <= capacity:
-            cur_size += o.order.weight
-        else:
-            db.session.delete(o)
+    if not orders:
+        recalculate_rating(c.id, pack_type)
+        return
+
+    orders_to_func = [OrderDB(id=o.id_order, weight=o.order.weight, region=42) for o in orders]
+
+    id_chosen = choose_orders(orders_to_func, capacity)
+    for o in orders:
+        if o.id_order not in id_chosen:
+            db.session.query(Assigned_Order).filter_by(id_order=o.id_order).delete()
     db.session.commit()
+    if not db.session.query(Assigned_Order).filter_by(id_courier=c.id).all():
+        recalculate_rating(c.id, pack_type)
 
 
 def update_db(courier_update: CourierOptional):
@@ -267,8 +312,6 @@ def update_db(courier_update: CourierOptional):
     courier_update.regions = [r.region for r in current_courier.regions]
     courier_update.working_hours = [TimeSegment.by_sums(ts.begin, ts.end) for ts in current_courier.working_hours]
     correct_assigned_orders(courier_update)
-
-
 
     return courier_update
 
@@ -394,6 +437,7 @@ def get_courier_data(id):
     except Exception as e:
         return f'{{ "error": {str(e)} }}', 400
 
+
 @app.route('/clear', methods=['POST'])
 def clear():
     rec = json.loads(request.get_data())
@@ -406,4 +450,4 @@ def clear():
 
 if __name__ == '__main__':
     db.create_all()
-    app.run(host="127.0.0.1", port=8080, debug=True)
+    app.run(host="0.0.0.0", port=8080)

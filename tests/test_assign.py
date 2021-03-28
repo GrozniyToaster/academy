@@ -91,7 +91,7 @@ class CouriersPostTestCase(unittest.TestCase):
 
         data = '{"courier_id": 4}'
         expected ={
-            "orders": [1, 5]
+            "orders": [{'id': 1}, {'id': 5}]
         }
         ans = requests.post(self.adress + '/orders/assign', data=data)
         self.assertEqual(ans.status_code, 200)
@@ -119,7 +119,7 @@ class CouriersPostTestCase(unittest.TestCase):
 
         data = '{"courier_id": 4}'
         expected = {
-            "orders": [1],
+            "orders": [{'id': 1}],
             "assign_time": time
         }
         ans = requests.post(self.adress + '/orders/assign', data=data)
@@ -230,7 +230,7 @@ class CouriersPostTestCase(unittest.TestCase):
 
         data = '{"courier_id": 4}'
         expected = {
-            "orders": [1, 6, 2]
+            "orders": [{'id': 1}, {'id': 6}, {'id': 5}]
         }
         ans = requests.post(self.adress + '/orders/assign', data=data)
         self.assertEqual(ans.status_code, 200)
@@ -247,7 +247,7 @@ class CouriersPostTestCase(unittest.TestCase):
         self.assertEqual(ans.status_code, 200)
 
         expected = {
-            "orders": [6],
+            "orders": [{'id': 5}, {'id': 6}],
             "assign_time": time
         }
 
@@ -266,7 +266,7 @@ class CouriersPostTestCase(unittest.TestCase):
         self.assertEqual(ans.status_code, 200)
 
         expected = {
-            "orders": [5]
+            "orders": [{'id': 5}]
         }
 
         ans = requests.post(self.adress + '/orders/assign', data='{"courier_id": 4}')
@@ -321,36 +321,36 @@ class CouriersPostTestCase(unittest.TestCase):
         self.assertEqual(json.loads(ans.text), expected)
 
         data = """
-                    {
-                        "data": [
-                                {
-                                        "order_id": 1,
-                                        "weight": 0.01,
-                                        "region": 12,
-                                        "delivery_hours": ["00:00-09:00"]
-                                },{
-                                        "order_id": 2,
-                                        "weight": 9.62,
-                                        "region": 12,
-                                        "delivery_hours": ["11:00-23:25"]
-                                },{
-                                        "order_id": 5,
-                                        "weight": 9.63,
-                                        "region": 12,
-                                        "delivery_hours": ["00:00-09:01"]
-                                },{
-                                        "order_id": 6,
-                                        "weight": 0.3,
-                                        "region": 13,
-                                        "delivery_hours": ["10:00-12:59"]
-                                },{
-                                        "order_id": 7,
-                                        "weight": 14.5,
-                                        "region": 1,
-                                        "delivery_hours": ["00:00-00:15"]
-                                }
-                        ]
-                    }
+                {
+                    "data": [
+                            {
+                                    "order_id": 1,
+                                    "weight": 0.01,
+                                    "region": 12,
+                                    "delivery_hours": ["00:00-09:00"]
+                            },{
+                                    "order_id": 2,
+                                    "weight": 0.1,
+                                    "region": 12,
+                                    "delivery_hours": ["11:00-23:25"]
+                            },{
+                                    "order_id": 5,
+                                    "weight": 0.1,
+                                    "region": 12,
+                                    "delivery_hours": ["00:00-09:01"]
+                            },{
+                                    "order_id": 6,
+                                    "weight": 0.3,
+                                    "region": 12,
+                                    "delivery_hours": ["10:59-12:59"]
+                            },{
+                                    "order_id": 7,
+                                    "weight": 5.5,
+                                    "region": 1,
+                                    "delivery_hours": ["10:30-10:31"]
+                            }
+                    ]
+                }
                     """
         expected = {
             "orders": [
@@ -367,12 +367,12 @@ class CouriersPostTestCase(unittest.TestCase):
         self.assertEqual(json.loads(ans.text), expected)
 
         expected = {
-            "orders": []
+            "orders": [{'id': 5}, {'id': 6}, {'id': 7}]
         }
 
         ans = requests.post(self.adress + '/orders/assign', data='{ "courier_id": 4}')
         self.assertEqual(ans.status_code, 200)
-        self.assertEqual(json.loads(ans.text), expected)
+        self.assertEqual(json.loads(ans.text)["orders"], expected["orders"])
 
 if __name__ == "__main__":
     unittest.main()

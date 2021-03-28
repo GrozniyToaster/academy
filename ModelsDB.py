@@ -41,6 +41,9 @@ class CourierDB(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     type = db.Column(db.String(4), nullable=False)
     time_last_order = db.Column(db.DateTime)
+    count_completed_orders_in_pack = db.Column(db.Integer, nullable=False)
+    rating = db.Column(db.Float)
+    earnings = db.Column(db.Integer, nullable=False)
 
     def __repr__(self):
         return f'<CourierDB({self.id}, {self.type}, {self.time_last_order}>'
@@ -103,9 +106,6 @@ class OrdersDeliveryHours(db.Model):
         return f'<OrdersDeliveryHours({self.id}, {self.begin}, {self.end})>'
 
 
-def zero():
-    return 0
-
 
 class Rating(db.Model):
     __tablename__ = 'rating'
@@ -116,11 +116,9 @@ class Rating(db.Model):
     id = db.Column(db.Integer, ForeignKey('couriers.id'))
     region = db.Column(db.Integer, nullable=False)
     sum_dt = db.Column(db.Integer, default=db.null)
-    count_foot = db.Column(db.Integer)
-    count_bike = db.Column(db.Integer)
-    count_car = db.Column(db.Integer)
-    courier = relationship('CourierDB', cascade="all,delete", backref="rating")
+    count_orders = db.Column(db.Integer)
+    courier = relationship('CourierDB', cascade="all,delete", backref="rating_regions")
 
     def __repr__(self):
         return f'<OrdersDeliveryHours({self.id}, {self.region}, {self.sum_dt}, \
-        {self.count_foot}, {self.count_bike}, {self.count_car})>'
+        {self.count_orders})>'

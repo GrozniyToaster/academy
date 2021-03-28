@@ -91,7 +91,7 @@ class CouriersPostTestCase(unittest.TestCase):
 
         data = '{"courier_id": 4}'
         expected ={
-            "orders": [1, 5]
+            "orders": [{'id': 1}, {'id': 2}]
         }
         ans = requests.post(self.adress + '/orders/assign', data=data)
         self.assertEqual(ans.status_code, 200)
@@ -132,12 +132,12 @@ class CouriersPostTestCase(unittest.TestCase):
         data = f"""
             {{
               "courier_id": 4,
-              "order_id": 5,
+              "order_id": 2,
               "complete_time": "{datetime.utcnow()}"
             }}
             """
         expected = {
-            "order_id": 5
+            "order_id": 2
         }
         ans = requests.post(self.adress + '/orders/complete', data=data)
         self.assertEqual(ans.status_code, 200)
