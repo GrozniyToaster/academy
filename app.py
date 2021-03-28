@@ -27,6 +27,7 @@ payment_c = {
 }
 
 
+
 def recalculate_rating(id: int, type_last_pack: str):
     courier = db.session.query(CourierDB).filter_by(id=id).one()
     if courier.count_completed_orders_in_pack == 0:
