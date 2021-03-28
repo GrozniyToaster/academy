@@ -238,7 +238,7 @@ def add_rec_assigned_order(orders: List[int], courier: CourierDB):
         ans.assign_time = courier.assigned[0].time
         ans = ans.json(exclude_defaults=True, by_alias=True)
     else:
-        ans = "{\"orders\": []}"
+        ans = {"orders": []}
 
     return ans
 
@@ -365,7 +365,7 @@ def couriers_patch(id):
         update_fields.id = id
         updated = update_db(update_fields)
     except Exception as e:
-        return "{\"error\": \"id must be in system and required field to patch in courier_type , regions ,working_hours\"}", 400
+        return {"error": "id must be in system and required field to patch in courier_type , regions ,working_hours"}, 400
     return updated.json(exclude_defaults=True, by_alias=True), 200
 
 
@@ -417,7 +417,7 @@ def orders_assign_post():
         courier = CourierOptional.parse_raw(request.get_data())
         answer = assign_orders_to_courier(courier)
     except Exception as e:
-        return f'{{ "error": {str(e)} }}', 400
+        return {"error": str(e)}, 400
     return answer, 200
 
 
@@ -427,8 +427,8 @@ def orders_complete_post():
         order = Completed_order.parse_raw(request.get_data())
         insert_complete(order)
     except Exception as e:
-        return f'{{ "error": {str(e)} }}', 400
-    return f"{{ \"order_id\": {order.order_id} }}", 200
+        return {"error": str(e)}, 400
+    return {"order_id": order.order_id}, 200
 
 
 @app.route('/couriers/<int:id>', methods=['GET'])
@@ -436,17 +436,17 @@ def get_courier_data(id):
     try:
         return get_data(id)
     except Exception as e:
-        return f'{{ "error": {str(e)} }}', 400
+        return {"error": str(e)}, 400
 
 
 @app.route('/clear', methods=['POST'])
 def clear():
     rec = json.loads(request.get_data())
     if rec['pass'] != 4685:
-        return "", 404
+        return {}, 404
     db.drop_all()
     db.create_all()
-    return '', 200
+    return {}, 200
 
 
 if __name__ == '__main__':
