@@ -14,6 +14,7 @@ import json
 
 from typing import List
 
+# courier_type constants -----------------------------------------------------------------------------------------------
 lifting_capacity = {
     'foot': 10,
     'bike': 15,
@@ -27,6 +28,7 @@ payment_c = {
 }
 
 
+# update rating in end of pack orders ----------------------------------------------------------------------------------
 
 def recalculate_rating(id: int, type_last_pack: str):
     courier = db.session.query(CourierDB).filter_by(id=id).one()
@@ -42,6 +44,7 @@ def recalculate_rating(id: int, type_last_pack: str):
     db.session.commit()
 
 
+# get method -----------------------------------------------------------------------------------------------------------
 def get_data(id: int):
     cDB = db.session.query(CourierDB).filter_by(id=id).one()
     rating, payment = cDB.rating, cDB.earnings
@@ -56,6 +59,7 @@ def get_data(id: int):
     return ans.json(exclude_defaults=True, by_alias=True)
 
 
+# post courier ---------------------------------------------------------------------------------------------------------
 def insert_courier(c: CourierStrong):
     courier = CourierDB(id=c.id, type=c.type, count_completed_orders_in_pack=0, earnings=0, rating=-1)
     courier.regions = [
@@ -72,6 +76,7 @@ def insert_courier(c: CourierStrong):
         raise Exception("Courier already exist")
 
 
+# post order -----------------------------------------------------------------------------------------------------------
 def insert_order(o: Order):
     order = OrderDB(id=o.id, weight=o.weight, region=o.region)
     order.delivery_hours = [
@@ -85,6 +90,7 @@ def insert_order(o: Order):
         raise Exception("not uniq id")
 
 
+# insert complete order ------------------------------------------------------------------------------------------------
 def update_rating_fields(courier_id, order_id, region, dt, type):
     try:
         rec = db.session.query(Rating).filter_by(id=courier_id, region=region).one()
@@ -121,6 +127,7 @@ def insert_complete(o: Completed_order):
         recalculate_rating(o.courier_id, type_pack)
 
 
+# assign order to courier ----------------------------------------------------------------------------------------------
 def intersection_segments(a1, b1, a2, b2):
     return (b2 > a1 and a2 < b1)
 
@@ -257,6 +264,7 @@ def assign_orders_to_courier(courier: CourierOptional):
     return add_rec_assigned_order(orders, courier_db)
 
 
+# courier_patch --------------------------------------------------------------------------------------------------------
 def correct_assigned_orders(c: CourierOptional):
     orders = db.session.query(Assigned_Order).filter_by(
         id_courier=c.id
@@ -318,6 +326,8 @@ def update_db(courier_update: CourierOptional):
     return courier_update
 
 
+# routing --------------------------------------------------------------------------------------------------------------
+
 @app.route('/couriers', methods=['POST'])
 def couriers_post():
     valid_couriers_json = []
@@ -366,7 +376,8 @@ def couriers_patch(id):
         update_fields.id = id
         updated = update_db(update_fields)
     except Exception as e:
-        return {"error": "id must be in system and required field to patch in courier_type , regions ,working_hours"}, 400
+        return {
+                   "error": "id must be in system and required field to patch in courier_type , regions ,working_hours"}, 400
     return updated.json(exclude_defaults=True, by_alias=True), 200
 
 
